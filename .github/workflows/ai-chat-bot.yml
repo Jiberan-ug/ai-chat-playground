@@ -44,7 +44,7 @@ jobs:
             -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
             -d "{
-              \"model\": \"gpt5.5 extra high\",
+              \"model\": \"gpt-5.5-high\",
               \"messages\": [
                 {
                   \"role\": \"user\",
