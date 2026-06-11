@@ -1,0 +1,82 @@
+name: AI Chat Bot
+
+on:
+  issue_comment:
+    types: [created, edited]
+  issues:
+    types: [opened, edited]
+
+jobs:
+  ai-reply:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Extract Issue Content
+        id: extract
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let message = '';
+            let issue_number = 0;
+            
+            if (context.payload.issue) {
+              issue_number = context.payload.issue.number;
+              message = context.payload.issue.body || '';
+            }
+            
+            if (context.payload.comment) {
+              issue_number = context.payload.issue.number;
+              message = context.payload.comment.body || '';
+            }
+            
+            core.setOutput('message', message);
+            core.setOutput('issue_number', issue_number);
+
+      - name: Call AI API
+        id: ai_response
+        env:
+          API_KEY: ${{ secrets.AI_API_KEY }}
+          API_URL: ${{ secrets.AI_API_URL }}
+          MESSAGE: ${{ steps.extract.outputs.message }}
+        run: |
+          response=$(curl -s -X POST "$API_URL/chat/completions" \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"model\": \"gpt5.5 extra high\",
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": \"$MESSAGE\"
+                }
+              ],
+              \"max_tokens\": 2000,
+              \"temperature\": 0.7
+            }")
+          
+          echo "RESPONSE=$response" >> $GITHUB_ENV
+
+      - name: Parse and Post Reply
+        uses: actions/github-script@v7
+        env:
+          RESPONSE: ${{ env.RESPONSE }}
+        with:
+          script: |
+            const response = JSON.parse(process.env.RESPONSE);
+            let reply = '';
+            
+            if (response.choices && response.choices[0] && response.choices[0].message) {
+              reply = response.choices[0].message.content;
+            } else if (response.error) {
+              reply = `❌ API 错误: ${response.error.message}`;
+            } else {
+              reply = `⚠️ 响应格式异常:\n\`\`\`\n${JSON.stringify(response, null, 2)}\n\`\`\``;
+            }
+            
+            await github.rest.issues.createComment({
+              issue_number: ${{ steps.extract.outputs.issue_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🤖 AI 回复:\n\n${reply}`
+            });
